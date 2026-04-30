@@ -1420,14 +1420,13 @@ with tab3:
 # ── TAB 4 — AI HYPOTHESES ────────────────────────────────────────────────────
 with tab4:
     st.markdown('<div class="section-head">AI hypothesis generator — powered by AI</div>', unsafe_allow_html=True)
-    
-    # Usamos f""" para permitir variables y que el texto sea multilínea más legible
+
     st.markdown(
         f"""
         <div class="insight-card">
-            The AI analyses the winning variant's qualitative feedback and generates <b>3 synthetic hypotheses</b> 
-            for the next variant's test iteration. Each preserves the urgency that drove Variant {oc['winner_variant']}'s conversion 
-            while softening the alarmist tone to protect brand equity. 
+            The AI analyses the winning variant's qualitative feedback and generates <b>3 synthetic hypotheses</b>
+            for the next test iteration. Each preserves the urgency that drove Variant {oc['winner_variant']}'s conversion
+            while softening the alarmist tone to protect brand equity.
             Output is a ready-to-run test backlog grounded in data, not guesswork.
         </div>
         """,
@@ -1456,7 +1455,6 @@ with tab4:
         if st.button("Load", use_container_width=True):
             try:
                 parsed = json.loads(pasted)
-                # If user picked rule-based option, generate locally
                 if parsed.get("__rule_based__"):
                     parsed = make_rule_based_ai(enriched, oc, guard)
                 st.session_state.ai_result   = parsed
@@ -1475,7 +1473,7 @@ with tab4:
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="section-head">  Synthetic hypotheses for next experiments </div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-head">Synthetic hypotheses for next experiments</div>', unsafe_allow_html=True)
         for i, h in enumerate(ai.get("hypotheses", []), 1):
             risk_c = {"Low":"#059669","Medium":"#b45309","High":"#b91c1c"}.get(h.get("risk_level","Low"),"#059669")
             risk_b = {"Low":"#022c1a","Medium":"#1a0e00","High":"#1a0404"}.get(h.get("risk_level","Low"),"#022c1a")
@@ -1514,13 +1512,14 @@ with tab4:
         st.markdown(
             '<div class="insight-card" style="border-color:#1c2e4a;text-align:center;padding:40px 20px;">'
             '<div style="font-size:32px;margin-bottom:12px">🤖</div>'
-            '<div style="font-size:14px;color:#2d3650">Press <b style="color:#8892a4">Generate AI hypotheses</b> to run the analysis.</div>'
+            '<div style="font-size:14px;color:#2d3650">Press <b style="color:#8892a4">Generate</b> above to run the analysis.</div>'
             '</div>',
             unsafe_allow_html=True,
         )
 
-    # ── Export — PowerPoint ──────────────────────────────────────────────────
+   # ── Export Management Reports ────────────────────────────────────────────
     st.markdown('<div class="section-head">Export management report</div>', unsafe_allow_html=True)
+    st.caption("Choose a format. Each export contains the complete analysis: metrics, variant breakdown, opportunity cost, AI hypotheses, and priority actions. Word and PowerPoint embed the performance charts as images.")
 
     figs = {
         "RPI Comparison":      chart_rpi(enriched),
@@ -1528,17 +1527,34 @@ with tab4:
         "12-Month Projection": chart_projection(oc),
         "Funnel Comparison":   chart_funnel(enriched),
     }
+    date_str = ts[:10]
 
-    if st.button("⬇  Download PowerPoint Deck (.pptx)", use_container_width=True):
-        with st.spinner("Building deck…"):
-            try:
-                data = build_pptx(enriched, oc, guard, ai, ts, figs)
-                st.download_button(
-                    "⬇  Click here to save the file",
-                    data=data,
-                    file_name=f"revenue_report_{ts[:10]}.pptx",
-                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    use_container_width=True,
-                )
-            except Exception as e:
-                st.error(f"Error: {e} — make sure python-pptx is installed.")
+    col_word, col_ppt = st.columns(2)
+
+    with col_word:
+        try:
+            docx_data = build_docx(enriched, oc, guard, ai, ts, figs)
+            st.download_button(
+                label="📄 Download Word Report (.docx)",
+                data=docx_data,
+                file_name=f"revenue_report_{date_str}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                key="dl_docx"
+            )
+        except Exception as e:
+            st.error(f"⚠️ Error: Ejecuta en tu terminal: pip install python-docx kaleido. Detalle: {e}")
+
+    with col_ppt:
+        try:
+            pptx_data = build_pptx(enriched, oc, guard, ai, ts, figs)
+            st.download_button(
+                label="📊 Download PowerPoint (.pptx)",
+                data=pptx_data,
+                file_name=f"revenue_report_{date_str}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+                key="dl_pptx"
+            )
+        except Exception as e:
+            st.error(f"⚠️ Error: Ejecuta en tu terminal: pip install python-pptx kaleido. Detalle: {e}")
