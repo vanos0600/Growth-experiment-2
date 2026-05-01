@@ -181,6 +181,9 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     max_rpi          = d["RPI"].max()
     d["RPI_pct"]     = d["RPI"] / max_rpi
     d["is_winner"]   = d["Revenue_$"] == d["Revenue_$"].max()
+    # Sanitiza Notes: si el data_editor entrega None o NaN, lo convertimos a ""
+    # y forzamos a string antes de aplicar str.lower() para evitar TypeError.
+    d["Notes"]       = d["Notes"].fillna("").astype(str)
     notes_lower      = d["Notes"].str.lower()
     d["brand_risk"]  = notes_lower.apply(
         lambda n: "high"   if any(w in n for w in ["unsubscribe","toxic","angry","complaint"]) else
@@ -405,11 +408,17 @@ def make_rule_based_ai(enriched, oc, guard) -> dict:
     lift    = (winner["Revenue_$"] - enriched.iloc[0]["Revenue_$"]) / enriched.iloc[0]["Revenue_$"] * 100
     risk    = winner["brand_risk"]
 
+    # Lógica inteligente para el texto del riesgo
+    if risk != "low":
+        risk_text = f"The key trade-off is a {risk} brand risk signal from user feedback that must be resolved before scale."
+    else:
+        risk_text = "No negative brand signals detected, clearing the path for immediate scaling."
+
     summary = (
         f"Variant {winner['Variant']} is the clear financial winner with ${winner['Revenue_$']:,.0f} revenue, "
         f"a {winner['Conversion_%']}% conversion rate, and an RPI of ${winner['RPI']:.4f} — "
         f"a +{lift:.1f}% lift over the control. "
-        f"The key trade-off is a {risk} brand risk signal from user feedback that must be resolved before scale. "
+        f"{risk_text} "
         f"Annual revenue at stake: ${oc['annual_lost']:,.0f}."
     )
 
