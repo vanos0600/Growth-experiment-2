@@ -1415,8 +1415,6 @@ with tab3:
     hero(s1, f"Monthly at {pct}% rollout", f"${scenario_monthly:,.0f}", f"{pct}% traffic to winner", "purple")
     hero(s2, "vs current mix",             f"+${scenario_monthly - oc['baseline_monthly']:,.0f}", "incremental monthly", "blue")
     hero(s3, "Annual at this scenario",    f"${scenario_monthly*12:,.0f}", "projected full year", "green")
-
-
 # ── TAB 4 — AI HYPOTHESES ────────────────────────────────────────────────────
 with tab4:
     st.markdown('<div class="section-head">AI hypothesis generator — powered by AI</div>', unsafe_allow_html=True)
@@ -1433,77 +1431,133 @@ with tab4:
         unsafe_allow_html=True,
     )
 
+    # ── Session state init ───────────────────────────────────────────────────
     if "ai_result" not in st.session_state:
         st.session_state.ai_result = None
     if "ai_json_raw" not in st.session_state:
         st.session_state.ai_json_raw = ""
 
+    # ── Prompt build + AI component ──────────────────────────────────────────
     prompt_str = build_prompt(enriched, oc, guard)
     ai_component(prompt_str)
 
-    st.caption("Rule-based: select 'Rule-based (no key)' and click Generate → Load. With a key: copy the JSON → paste → Load.")
+    st.caption("📥 **Data Bridge:** Paste the generated output payload here, or simply type **DEMO** to run the local engine.")
     col_paste, col_load = st.columns([5, 1])
+
     with col_paste:
+        # Evitamos mostrar el código JSON raro por defecto para no asustar al usuario
+        default_val = st.session_state.ai_json_raw if st.session_state.ai_json_raw not in ['{"__rule_based__":true}', '{"__rule_based__": true}'] else ""
+
         pasted = st.text_area(
-            "ai_paste", value=st.session_state.ai_json_raw,
-            height=68, label_visibility="collapsed",
-            placeholder='{"executive_summary": "...", "verdict": "..."} or {"__rule_based__": true}',
+            "ai_paste", value=default_val,
+            height=43, label_visibility="collapsed",
+            placeholder='Paste the output data here, or type DEMO...',
             key="ai_paste_area",
         )
+
     with col_load:
-        st.write("")
-        if st.button("Load", use_container_width=True):
-            try:
-                parsed = json.loads(pasted)
-                if parsed.get("__rule_based__"):
-                    parsed = make_rule_based_ai(enriched, oc, guard)
-                st.session_state.ai_result   = parsed
-                st.session_state.ai_json_raw = pasted
+        if st.button("Render Report", use_container_width=True):
+            pasted_clean = pasted.strip()
+
+            # El truco: Si escriben DEMO o pegan el texto original, carga sin errores
+            if pasted_clean.upper() == "DEMO" or "rule_based" in pasted_clean:
+                st.session_state.ai_result = make_rule_based_ai(enriched, oc, guard)
+                st.session_state.ai_json_raw = "DEMO"
                 st.rerun()
-            except Exception:
-                st.error("Invalid JSON — paste the full result object or {\"__rule_based__\": true}.")
+            else:
+                try:
+                    parsed = json.loads(pasted_clean)
+                    st.session_state.ai_result = parsed
+                    st.session_state.ai_json_raw = pasted_clean
+                    st.rerun()
+                except Exception:
+                    st.error("⚠️ Invalid format. Paste the exact output from the console above, or type DEMO.")
 
     ai = st.session_state.ai_result
 
+    # ── AI results section ───────────────────────────────────────────────────
     if ai:
+        # Executive summary
         st.markdown('<div class="section-head">Executive summary</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="insight-card">{ai.get("executive_summary","")}<br><br>'
-            f'<b>Verdict:</b> {ai.get("verdict","—")} — {ai.get("verdict_rationale","")}</div>',
+            f'<div class="insight-card">{ai.get("executive_summary", "")}<br><br>'
+            f'<b>Verdict:</b> {ai.get("verdict", "—")} — {ai.get("verdict_rationale", "")}</div>',
             unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="section-head">Synthetic hypotheses for next experiments</div>', unsafe_allow_html=True)
-        for i, h in enumerate(ai.get("hypotheses", []), 1):
-            risk_c = {"Low":"#059669","Medium":"#b45309","High":"#b91c1c"}.get(h.get("risk_level","Low"),"#059669")
-            risk_b = {"Low":"#022c1a","Medium":"#1a0e00","High":"#1a0404"}.get(h.get("risk_level","Low"),"#022c1a")
-            st.markdown(f"""
-            <div class="hyp-card">
-              <div class="hyp-num">{h.get('id','H'+str(i))} &nbsp;·&nbsp; SYNTHETIC HYPOTHESIS</div>
-              <div class="hyp-body">
-                <b>Copy:</b> "{h.get('copy','')}"<br>
-                <b>Rationale:</b> {h.get('rationale','')}<br>
-                <b>Expected outcome:</b> {h.get('predicted_outcome','')}
-              </div>
-              <span style="display:inline-block;font-size:10px;background:{risk_b};color:{risk_c};
-                padding:2px 8px;border-radius:20px;border:0.5px solid {risk_c}55;margin-top:8px;
-                font-family:JetBrains Mono;font-weight:600;">
-                Risk: {h.get('risk_level','—')}
-              </span>
-            </div>""", unsafe_allow_html=True)
+        # Synthetic hypotheses
+        st.markdown(
+            '<div class="section-head">Synthetic hypotheses for next experiments</div>',
+            unsafe_allow_html=True,
+        )
 
+        risk_color_map = {
+            "Low":    ("#059669", "#022c1a"),
+            "Medium": ("#b45309", "#1a0e00"),
+            "High":   ("#b91c1c", "#1a0404"),
+        }
+
+        for i, h in enumerate(ai.get("hypotheses", []), 1):
+            risk_level = h.get("risk_level", "Low")
+            risk_c, risk_b = risk_color_map.get(risk_level, risk_color_map["Low"])
+            hyp_id = h.get("id", f"H{i}")
+
+            st.markdown(
+                f"""
+                <div class="hyp-card">
+                  <div class="hyp-num">{hyp_id} &nbsp;·&nbsp; SYNTHETIC HYPOTHESIS</div>
+                  <div class="hyp-body">
+                    <b>Copy:</b> "{h.get('copy', '')}"<br>
+                    <b>Rationale:</b> {h.get('rationale', '')}<br>
+                    <b>Expected outcome:</b> {h.get('predicted_outcome', '')}
+                  </div>
+                  <span style="display:inline-block;font-size:10px;background:{risk_b};color:{risk_c};
+                    padding:2px 8px;border-radius:20px;border:0.5px solid {risk_c}55;margin-top:8px;
+                    font-family:JetBrains Mono;font-weight:600;">
+                    Risk: {risk_level}
+                  </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Governance / system prompt transparency
+        st.write("")
+        with st.expander("🔍 View AI System Prompt (Governance & Brand Safety)"):
+            st.markdown(
+                f"""
+                **System Instructions provided to the LLM:**
+
+                > "You are an expert CRO and Growth copywriter for **Gen** (Norton, Avast, LifeLock).
+                > Your task is to generate 3 new A/B test copy hypotheses based on Variant {oc['winner_variant']}'s performance.
+                >
+                > **CRITICAL RULE — BRAND SAFETY:** The winning variant generated negative user feedback for being 'too scary'.
+                > You must soften the tone to protect our brand equity, while strictly maintaining the psychological urgency
+                > that drove the conversion rate.
+                > Do not use alarmist words. Focus on empowerment and digital security."
+                """
+            )
+            st.info(
+                "💡 **AI Ops Insight:** Transparent prompt architecture ensures AI outputs remain strictly aligned "
+                "with Gen's brand guidelines and compliance standards before any human review."
+            )
+
+        # Priority actions (single block — no duplication)
         if ai.get("priority_actions"):
             st.markdown('<div class="section-head">Priority actions</div>', unsafe_allow_html=True)
-            html = '<div class="insight-card" style="padding:16px 20px">'
-            for i, a in enumerate(ai["priority_actions"], 1):
-                html += (f'<div style="display:flex;gap:12px;padding:9px 0;border-bottom:0.5px solid #141824;align-items:flex-start">'
-                         f'<div style="width:24px;height:24px;border-radius:50%;background:#10b981;color:#022c22;'
-                         f'font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;'
-                         f'flex-shrink:0;font-family:JetBrains Mono">{i:02d}</div>'
-                         f'<div style="font-size:13px;color:#8892a4;line-height:1.55">{a}</div></div>')
-            html += "</div>"
-            st.markdown(html, unsafe_allow_html=True)
+            html_parts = ['<div class="insight-card" style="padding:16px 20px">']
+            for i, action in enumerate(ai["priority_actions"], 1):
+                html_parts.append(
+                    f'<div style="display:flex;gap:12px;padding:9px 0;border-bottom:0.5px solid #141824;align-items:flex-start">'
+                    f'<div style="width:24px;height:24px;border-radius:50%;background:#10b981;color:#022c22;'
+                    f'font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;'
+                    f'flex-shrink:0;font-family:JetBrains Mono">{i:02d}</div>'
+                    f'<div style="font-size:13px;color:#8892a4;line-height:1.55">{action}</div></div>'
+                )
+            html_parts.append("</div>")
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
 
+        # Risk mitigation
         if ai.get("risk_mitigation"):
             st.markdown('<div class="section-head">Brand risk mitigation</div>', unsafe_allow_html=True)
             banner("warning", "🛡️", "Brand equity protection strategy", ai["risk_mitigation"])
@@ -1517,9 +1571,14 @@ with tab4:
             unsafe_allow_html=True,
         )
 
-   # ── Export Management Reports ────────────────────────────────────────────
+    # ── Export Management Reports ────────────────────────────────────────────
+    # Los botones SIEMPRE se renderizan. Si no hay AI cargada, aparecen
+    # deshabilitados con tooltip explicativo en lugar de ocultarse.
     st.markdown('<div class="section-head">Export management report</div>', unsafe_allow_html=True)
-    st.caption("Choose a format. Each export contains the complete analysis: metrics, variant breakdown, opportunity cost, AI hypotheses, and priority actions. Word and PowerPoint embed the performance charts as images.")
+    st.caption(
+        "Choose a format. Each export contains the complete analysis: metrics, variant breakdown, "
+        "opportunity cost, AI hypotheses, and priority actions. Word and PowerPoint embed the performance charts as images."
+    )
 
     figs = {
         "RPI Comparison":      chart_rpi(enriched),
@@ -1528,33 +1587,57 @@ with tab4:
         "Funnel Comparison":   chart_funnel(enriched),
     }
     date_str = ts[:10]
+    ai_ready = ai is not None
+    disabled_help = None if ai_ready else "Generate and load the AI analysis above to enable downloads."
 
     col_word, col_ppt = st.columns(2)
 
     with col_word:
-        try:
-            docx_data = build_docx(enriched, oc, guard, ai, ts, figs)
-            st.download_button(
-                label="📄 Download Word Report (.docx)",
-                data=docx_data,
-                file_name=f"revenue_report_{date_str}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        if ai_ready:
+            try:
+                docx_data = build_docx(enriched, oc, guard, ai, ts, figs)
+                st.download_button(
+                    label="📄 Download Word Report (.docx)",
+                    data=docx_data,
+                    file_name=f"revenue_report_{date_str}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    key="dl_docx",
+                )
+            except Exception as e:
+                st.error(
+                    f"⚠️ Word export failed. Run in terminal: `pip install python-docx kaleido`. Detail: {e}"
+                )
+        else:
+            st.button(
+                "📄 Download Word Report (.docx)",
                 use_container_width=True,
-                key="dl_docx"
+                disabled=True,
+                help=disabled_help,
+                key="dl_docx_disabled",
             )
-        except Exception as e:
-            st.error(f"⚠️ Error: Ejecuta en tu terminal: pip install python-docx kaleido. Detalle: {e}")
 
     with col_ppt:
-        try:
-            pptx_data = build_pptx(enriched, oc, guard, ai, ts, figs)
-            st.download_button(
-                label="📊 Download PowerPoint (.pptx)",
-                data=pptx_data,
-                file_name=f"revenue_report_{date_str}.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        if ai_ready:
+            try:
+                pptx_data = build_pptx(enriched, oc, guard, ai, ts, figs)
+                st.download_button(
+                    label="📊 Download PowerPoint (.pptx)",
+                    data=pptx_data,
+                    file_name=f"revenue_report_{date_str}.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True,
+                    key="dl_pptx",
+                )
+            except Exception as e:
+                st.error(
+                    f"⚠️ PowerPoint export failed. Run in terminal: `pip install python-pptx kaleido`. Detail: {e}"
+                )
+        else:
+            st.button(
+                "📊 Download PowerPoint (.pptx)",
                 use_container_width=True,
-                key="dl_pptx"
+                disabled=True,
+                help=disabled_help,
+                key="dl_pptx_disabled",
             )
-        except Exception as e:
-            st.error(f"⚠️ Error: Ejecuta en tu terminal: pip install python-pptx kaleido. Detalle: {e}")
